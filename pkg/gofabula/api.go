@@ -11,21 +11,15 @@ import (
 
 type Offset int
 
-const (
-	FromStart   Offset = 0
-	FromCurrent Offset = -1
-)
-
-type OffsetStrategy struct {
-	Chapter int
-	Offset  Offset
-}
-
 type ConfigC struct {
 	Host     string
 	ID       string
-	Group    string
-	Offset   OffsetStrategy
+	Mark     Mark
+}
+
+type Mark struct {
+	Chapter int64
+	Line    int64
 }
 
 type zeusMqConsumer struct {
@@ -36,7 +30,8 @@ type zeusMqConsumer struct {
 
 type ZeusRequest struct {
 	Topic   string
-	Offset  uint64
+	Chapter uint64
+	Line    uint64
 	Message string
 }
 
@@ -56,11 +51,14 @@ func (z zeusMqConsumer) Handle(f func(r ZeusRequest) error) error {
 			return err
 		}
 		lineSpl := strings.Split(line, ";")
-		i, _ := strconv.Atoi(lineSpl[0])
+		currChapter, _ := strconv.Atoi(lineSpl[0])
+		currLine, _ := strconv.Atoi(lineSpl[1])
+
 		k := ZeusRequest{
-			Offset:  uint64(i),
-			Topic:   lineSpl[1],
-			Message: lineSpl[2],
+			Chapter: uint64(currChapter),
+			Line:    uint64(currLine),
+			Topic:   lineSpl[2],
+			Message: lineSpl[3],
 		}
 		json.Unmarshal([]byte(line), &k)
 		err = f(k)
@@ -87,7 +85,7 @@ func NewConsumer(c ConfigC) (zeusMqConsumer, error) {
 	if err != nil {
 		return zeusMqConsumer{}, err
 	}
-	_, err = conn.Write([]byte(fmt.Sprintf("c;%s;%s;%d\n",c.ID, c.Group, c.Offset)))
+	_, err = conn.Write([]byte(fmt.Sprintf("c;%s;%d;%d\n",c.ID, c.Mark.Chapter, c.Mark.Line)))
 	if err != nil {
 		return zeusMqConsumer{}, err
 	}
@@ -108,7 +106,7 @@ type zeusMqProducer struct {
 }
 
 func (z zeusMqProducer) Produce(topic string, msg string) (string, error) {
-	msgF := fmt.Sprintf("%s;a;%s\n", topic, msg)
+	msgF := fmt.Sprintf("%s;%s\n", topic, msg)
 	_, err := z.c.Write([]byte(msgF))
 	if err != nil {
 		return "", err
@@ -117,14 +115,16 @@ func (z zeusMqProducer) Produce(topic string, msg string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if line != "ok" {
+	lineSpl := strings.Split(line, ";")
+	if lineSpl[0] != "ok" {
 		return "", fmt.Errorf("returned error")
 	}
-	return err
+	return lineSpl[1], err
 }
 
 type SyncMessage struct {
 	GoupMap map[string]SyncMessageG
+
 }
 
 type SyncMessageG struct {
