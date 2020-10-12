@@ -1,4 +1,4 @@
-package gozeusmq
+package gofabula
 
 import (
 	"bufio"
@@ -22,25 +22,25 @@ type Mark struct {
 	Line    int64
 }
 
-type zeusMqConsumer struct {
+type fabulaConsumer struct {
 	c net.Conn
 	s *bufio.Scanner
 	toClose bool
 }
 
-type ZeusRequest struct {
+type FabulaRequest struct {
 	Topic   string
 	Chapter uint64
 	Line    uint64
 	Message string
 }
 
-func (z *zeusMqConsumer) Close() error {
+func (z *fabulaConsumer) Close() error {
 	z.toClose = true
 	return z.c.Close()
 }
 
-func (z zeusMqConsumer) Handle(f func(r ZeusRequest) error) error {
+func (z fabulaConsumer) Handle(f func(r FabulaRequest) error) error {
 	for {
 		line, err := z.readLine()
 		if z.toClose {
@@ -54,7 +54,7 @@ func (z zeusMqConsumer) Handle(f func(r ZeusRequest) error) error {
 		currChapter, _ := strconv.Atoi(lineSpl[0])
 		currLine, _ := strconv.Atoi(lineSpl[1])
 
-		k := ZeusRequest{
+		k := FabulaRequest{
 			Chapter: uint64(currChapter),
 			Line:    uint64(currLine),
 			Topic:   lineSpl[2],
@@ -73,39 +73,39 @@ func (z zeusMqConsumer) Handle(f func(r ZeusRequest) error) error {
 	}
 }
 
-func(z zeusMqConsumer) readLine() (string, error) {
+func(z fabulaConsumer) readLine() (string, error) {
 	if z.s.Scan(){
 		return z.s.Text(), nil
 	}
 	return "", fmt.Errorf("connection closed")
 }
 
-func NewConsumer(c ConfigC) (zeusMqConsumer, error) {
+func NewConsumer(c ConfigC) (fabulaConsumer, error) {
 	conn, err := net.Dial("tcp", c.Host)
 	if err != nil {
-		return zeusMqConsumer{}, err
+		return fabulaConsumer{}, err
 	}
 	_, err = conn.Write([]byte(fmt.Sprintf("c;%s;%d;%d\n",c.ID, c.Mark.Chapter, c.Mark.Line)))
 	if err != nil {
-		return zeusMqConsumer{}, err
+		return fabulaConsumer{}, err
 	}
 	scanner := newScanner(conn)
 	if scanner == nil {
-		return zeusMqConsumer{}, err
+		return fabulaConsumer{}, err
 	}
-	return zeusMqConsumer{c: conn, s: scanner}, nil
+	return fabulaConsumer{c: conn, s: scanner}, nil
 }
 
 type ConfigP struct {
 	Host string
 }
 
-type zeusMqProducer struct {
+type fabulaProducer struct {
 	c net.Conn
 	s *bufio.Scanner
 }
 
-func (z zeusMqProducer) Produce(topic string, msg string) (string, error) {
+func (z fabulaProducer) Produce(topic string, msg string) (string, error) {
 	msgF := fmt.Sprintf("%s;%s\n", topic, msg)
 	_, err := z.c.Write([]byte(msgF))
 	if err != nil {
@@ -138,18 +138,18 @@ type ConfigS struct {
 	MsgId string
 }
 
-type zeusMqSync struct {
+type fabulaSync struct {
 	c net.Conn
 	s *bufio.Scanner
 }
 
-func (z zeusMqSync) Sync(f func(SyncMessage)bool){
+func (z fabulaSync) Sync(f func(SyncMessage)bool){
 	if z.s.Scan(){
 
 	}
 }
 
-func NewSync(c ConfigS) (*zeusMqSync, error) {
+func NewSync(c ConfigS) (*fabulaSync, error) {
 	conn, err := net.Dial("tcp", c.Host)
 	if err != nil {
 		return nil, err
@@ -162,35 +162,35 @@ func NewSync(c ConfigS) (*zeusMqSync, error) {
 	if scanner == nil {
 		return nil, err
 	}
-	return &zeusMqSync{
+	return &fabulaSync{
 		c: conn,
 		s: scanner,
 	}, err
 }
 
-func(z zeusMqProducer) readLine() (string, error) {
+func(z fabulaProducer) readLine() (string, error) {
 	if z.s.Scan() {
 		return z.s.Text(), nil
 	}
 	return "", fmt.Errorf("connection closed")
 }
 
-func NewProducer(c ConfigP) (zeusMqProducer, error) {
+func NewProducer(c ConfigP) (fabulaProducer, error) {
 	conn, err := net.Dial("tcp", c.Host)
 	if err != nil {
-		return zeusMqProducer{}, err
+		return fabulaProducer{}, err
 	}
 	_, err = conn.Write([]byte("p;;;;\n"))
 	if err != nil {
-		return zeusMqProducer{}, err
+		return fabulaProducer{}, err
 	}
 
 	scanner := newScanner(conn)
 	if scanner == nil {
-		return zeusMqProducer{}, err
+		return fabulaProducer{}, err
 	}
 
-	return zeusMqProducer{c: conn, s: scanner}, nil
+	return fabulaProducer{c: conn, s: scanner}, nil
 }
 
 func newScanner(c net.Conn)*bufio.Scanner{
