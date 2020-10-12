@@ -11,7 +11,7 @@ import (
 
 type Offset int
 
-type ConfigC struct {
+type ConfigReader struct {
 	Host     string
 	ID       string
 	Mark     Mark
@@ -22,25 +22,25 @@ type Mark struct {
 	Line    int64
 }
 
-type fabulaConsumer struct {
+type fabulaReader struct {
 	c net.Conn
 	s *bufio.Scanner
 	toClose bool
 }
 
-type FabulaRequest struct {
+type FabulaLine struct {
 	Topic   string
 	Chapter uint64
 	Line    uint64
 	Message string
 }
 
-func (z *fabulaConsumer) Close() error {
+func (z *fabulaReader) Close() error {
 	z.toClose = true
 	return z.c.Close()
 }
 
-func (z fabulaConsumer) Handle(f func(r FabulaRequest) error) error {
+func (z fabulaReader) Read(f func(r FabulaLine) error) error {
 	for {
 		line, err := z.readLine()
 		if z.toClose {
@@ -54,7 +54,7 @@ func (z fabulaConsumer) Handle(f func(r FabulaRequest) error) error {
 		currChapter, _ := strconv.Atoi(lineSpl[0])
 		currLine, _ := strconv.Atoi(lineSpl[1])
 
-		k := FabulaRequest{
+		k := FabulaLine{
 			Chapter: uint64(currChapter),
 			Line:    uint64(currLine),
 			Topic:   lineSpl[2],
@@ -73,69 +73,74 @@ func (z fabulaConsumer) Handle(f func(r FabulaRequest) error) error {
 	}
 }
 
-func(z fabulaConsumer) readLine() (string, error) {
+func(z fabulaReader) readLine() (string, error) {
 	if z.s.Scan(){
 		return z.s.Text(), nil
 	}
 	return "", fmt.Errorf("connection closed")
 }
 
-func NewConsumer(c ConfigC) (fabulaConsumer, error) {
+func NewStoryReader(c ConfigReader) (fabulaReader, error) {
 	conn, err := net.Dial("tcp", c.Host)
 	if err != nil {
-		return fabulaConsumer{}, err
+		return fabulaReader{}, err
 	}
-	_, err = conn.Write([]byte(fmt.Sprintf("c;%s;%d;%d\n",c.ID, c.Mark.Chapter, c.Mark.Line)))
+	_, err = conn.Write([]byte(fmt.Sprintf("sr;%s;%d;%d\n",c.ID, c.Mark.Chapter, c.Mark.Line)))
 	if err != nil {
-		return fabulaConsumer{}, err
+		return fabulaReader{}, err
 	}
 	scanner := newScanner(conn)
 	if scanner == nil {
-		return fabulaConsumer{}, err
+		return fabulaReader{}, err
 	}
-	return fabulaConsumer{c: conn, s: scanner}, nil
+	return fabulaReader{c: conn, s: scanner}, nil
 }
 
-type ConfigP struct {
+type ConfigWriter struct {
 	Host string
 }
 
-type fabulaProducer struct {
+type fabulaStoryWriter struct {
 	c net.Conn
 	s *bufio.Scanner
 }
 
-func (z fabulaProducer) Produce(topic string, msg string) (string, error) {
+func (z fabulaStoryWriter) Write(topic string, msg string) (*Mark, error) {
 	msgF := fmt.Sprintf("%s;%s\n", topic, msg)
 	_, err := z.c.Write([]byte(msgF))
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	line, err := z.readLine()
+	response, err := z.readLine()
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	lineSpl := strings.Split(line, ";")
+	lineSpl := strings.Split(response, ";")
 	if lineSpl[0] != "ok" {
-		return "", fmt.Errorf("returned error")
+		return nil, fmt.Errorf("returned error")
 	}
-	return lineSpl[1], err
+	chapter,_ := strconv.ParseInt(lineSpl[1], 10, 64)
+	line,_ := strconv.ParseInt(lineSpl[2], 10, 64)
+	return &Mark{Chapter: chapter, Line: line}, err
 }
 
 type SyncMessage struct {
-	GoupMap map[string]SyncMessageG
+	ConsumerID string
+	Status     ConsumerStatus
 
 }
 
-type SyncMessageG struct {
-	Read    int
-	NotRead int
-	Reboot  int
-}
+type ConsumerStatus string
+
+const  (
+	CloseToRead ConsumerStatus = "almost"
+	FarAway     ConsumerStatus = "faraway"
+	ReadIt      ConsumerStatus = "readIt"
+)
 
 type ConfigS struct {
-	Host  string
-	MsgId string
+	Host string
+	Mark *Mark
 }
 
 type fabulaSync struct {
@@ -168,29 +173,29 @@ func NewSync(c ConfigS) (*fabulaSync, error) {
 	}, err
 }
 
-func(z fabulaProducer) readLine() (string, error) {
+func(z fabulaStoryWriter) readLine() (string, error) {
 	if z.s.Scan() {
 		return z.s.Text(), nil
 	}
 	return "", fmt.Errorf("connection closed")
 }
 
-func NewProducer(c ConfigP) (fabulaProducer, error) {
+func NewStoryWriter(c ConfigWriter) (fabulaStoryWriter, error) {
 	conn, err := net.Dial("tcp", c.Host)
 	if err != nil {
-		return fabulaProducer{}, err
+		return fabulaStoryWriter{}, err
 	}
-	_, err = conn.Write([]byte("p;;;;\n"))
+	_, err = conn.Write([]byte("sw;;;;\n"))
 	if err != nil {
-		return fabulaProducer{}, err
+		return fabulaStoryWriter{}, err
 	}
 
 	scanner := newScanner(conn)
 	if scanner == nil {
-		return fabulaProducer{}, err
+		return fabulaStoryWriter{}, err
 	}
 
-	return fabulaProducer{c: conn, s: scanner}, nil
+	return fabulaStoryWriter{c: conn, s: scanner}, nil
 }
 
 func newScanner(c net.Conn)*bufio.Scanner{
