@@ -28,7 +28,7 @@ type fabulaReader struct {
 	toClose bool
 }
 
-type FabulaLine struct {
+type FabulaTail struct {
 	Topic   string
 	Chapter uint64
 	Line    uint64
@@ -40,7 +40,7 @@ func (z *fabulaReader) Close() error {
 	return z.c.Close()
 }
 
-func (z fabulaReader) Read(f func(r FabulaLine) error) error {
+func (z fabulaReader) Read(f func(r FabulaTail) error) error {
 	for {
 		line, err := z.readLine()
 		if z.toClose {
@@ -54,7 +54,7 @@ func (z fabulaReader) Read(f func(r FabulaLine) error) error {
 		currChapter, _ := strconv.Atoi(lineSpl[0])
 		currLine, _ := strconv.Atoi(lineSpl[1])
 
-		k := FabulaLine{
+		k := FabulaTail{
 			Chapter: uint64(currChapter),
 			Line:    uint64(currLine),
 			Topic:   lineSpl[2],
