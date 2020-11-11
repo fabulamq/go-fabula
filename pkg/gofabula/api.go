@@ -12,9 +12,9 @@ import (
 type Offset int
 
 type ConfigReader struct {
-	Host     string
-	ID       string
-	Mark     Mark
+	Host string
+	ID   string
+	Mark Mark
 }
 
 type Mark struct {
@@ -23,14 +23,15 @@ type Mark struct {
 }
 
 type fabulaReader struct {
-	c net.Conn
-	s *bufio.Scanner
+	c       net.Conn
+	s       *bufio.Scanner
 	toClose bool
 }
 
 type FabulaTail struct {
 	Topic   string
 	Chapter uint64
+	Review  bool
 	Line    uint64
 	Message string
 }
@@ -53,12 +54,13 @@ func (z fabulaReader) Read(f func(r FabulaTail) error) error {
 		lineSpl := strings.Split(line, ";")
 		currChapter, _ := strconv.Atoi(lineSpl[0])
 		currLine, _ := strconv.Atoi(lineSpl[1])
-
+		review, _ := strconv.ParseBool(lineSpl[2])
 		k := FabulaTail{
 			Chapter: uint64(currChapter),
 			Line:    uint64(currLine),
-			Topic:   lineSpl[2],
-			Message: lineSpl[3],
+			Review:  review,
+			Topic:   lineSpl[3],
+			Message: lineSpl[4],
 		}
 		json.Unmarshal([]byte(line), &k)
 		err = f(k)
@@ -73,8 +75,8 @@ func (z fabulaReader) Read(f func(r FabulaTail) error) error {
 	}
 }
 
-func(z fabulaReader) readLine() (string, error) {
-	if z.s.Scan(){
+func (z fabulaReader) readLine() (string, error) {
+	if z.s.Scan() {
 		return z.s.Text(), nil
 	}
 	return "", fmt.Errorf("connection closed")
@@ -85,7 +87,7 @@ func NewStoryReader(c ConfigReader) (fabulaReader, error) {
 	if err != nil {
 		return fabulaReader{}, err
 	}
-	_, err = conn.Write([]byte(fmt.Sprintf("sr;%s;%d;%d\n",c.ID, c.Mark.Chapter, c.Mark.Line)))
+	_, err = conn.Write([]byte(fmt.Sprintf("sr;%s;%d;%d\n", c.ID, c.Mark.Chapter, c.Mark.Line)))
 	if err != nil {
 		return fabulaReader{}, err
 	}
@@ -119,20 +121,19 @@ func (z fabulaStoryWriter) Write(topic string, msg string) (*Mark, error) {
 	if lineSpl[0] != "ok" {
 		return nil, fmt.Errorf("returned error")
 	}
-	chapter,_ := strconv.ParseInt(lineSpl[1], 10, 64)
-	line,_ := strconv.ParseInt(lineSpl[2], 10, 64)
+	chapter, _ := strconv.ParseInt(lineSpl[1], 10, 64)
+	line, _ := strconv.ParseInt(lineSpl[2], 10, 64)
 	return &Mark{Chapter: chapter, Line: line}, err
 }
 
 type SyncMessage struct {
 	ConsumerID string
 	Status     ConsumerStatus
-
 }
 
 type ConsumerStatus string
 
-const  (
+const (
 	CloseToRead ConsumerStatus = "almost"
 	FarAway     ConsumerStatus = "faraway"
 	ReadIt      ConsumerStatus = "readIt"
@@ -148,8 +149,8 @@ type fabulaSync struct {
 	s *bufio.Scanner
 }
 
-func (z fabulaSync) Sync(f func(SyncMessage)bool){
-	if z.s.Scan(){
+func (z fabulaSync) Sync(f func(SyncMessage) bool) {
+	if z.s.Scan() {
 
 	}
 }
@@ -173,7 +174,7 @@ func NewSync(c ConfigS) (*fabulaSync, error) {
 	}, err
 }
 
-func(z fabulaStoryWriter) readLine() (string, error) {
+func (z fabulaStoryWriter) readLine() (string, error) {
 	if z.s.Scan() {
 		return z.s.Text(), nil
 	}
@@ -198,11 +199,11 @@ func NewStoryWriter(c ConfigWriter) (fabulaStoryWriter, error) {
 	return fabulaStoryWriter{c: conn, s: scanner}, nil
 }
 
-func newScanner(c net.Conn)*bufio.Scanner{
+func newScanner(c net.Conn) *bufio.Scanner {
 	scanner := bufio.NewScanner(c)
 	scanner.Split(bufio.ScanLines)
 	if scanner.Scan() {
-		if scanner.Text() == "ok"{
+		if scanner.Text() == "ok" {
 			return scanner
 		}
 	}
