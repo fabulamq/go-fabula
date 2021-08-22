@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"github.com/fabulamq/core/pkg/cnet"
 	"net"
 	"strconv"
 	"strings"
@@ -12,9 +13,9 @@ import (
 type Offset int
 
 type ConfigReader struct {
-	Host string
-	ID   string
-	Mark Mark
+	Hosts  []string
+	ID     string
+	Mark   Mark
 }
 
 type Mark struct {
@@ -52,15 +53,18 @@ func (z fabulaReader) Read(f func(r FabulaTail) error) error {
 			return err
 		}
 		lineSpl := strings.Split(line, ";")
-		currChapter, _ := strconv.Atoi(lineSpl[0])
-		currLine, _ := strconv.Atoi(lineSpl[1])
-		review, _ := strconv.ParseBool(lineSpl[2])
+		if lineSpl[0] != "msg"{
+			continue
+		}
+		currChapter, _ := strconv.Atoi(lineSpl[1])
+		currLine, _ := strconv.Atoi(lineSpl[2])
+		review, _ := strconv.ParseBool(lineSpl[3])
 		k := FabulaTail{
 			Chapter: uint64(currChapter),
 			Line:    uint64(currLine),
 			Review:  review,
-			Topic:   lineSpl[3],
-			Message: lineSpl[4],
+			Topic:   lineSpl[4],
+			Message: lineSpl[5],
 		}
 		json.Unmarshal([]byte(line), &k)
 		err = f(k)
@@ -83,23 +87,28 @@ func (z fabulaReader) readLine() (string, error) {
 }
 
 func NewStoryReader(c ConfigReader) (fabulaReader, error) {
-	conn, err := net.Dial("tcp", c.Host)
-	if err != nil {
-		return fabulaReader{}, err
+	var err error
+	var conn net.Conn
+	for _, host := range c.Hosts{
+		conn, err = cnet.Dial(host)
+		if err != nil {
+			return fabulaReader{}, err
+		}
+		_, err = conn.Write([]byte(fmt.Sprintf("sr;%s;%d;%d\n", c.ID, c.Mark.Chapter, c.Mark.Line)))
+		if err != nil {
+			return fabulaReader{}, err
+		}
+		scanner := newScanner(conn)
+		if scanner == nil {
+			return fabulaReader{}, err
+		}
+		return fabulaReader{c: conn, s: scanner}, nil
 	}
-	_, err = conn.Write([]byte(fmt.Sprintf("sr;%s;%d;%d\n", c.ID, c.Mark.Chapter, c.Mark.Line)))
-	if err != nil {
-		return fabulaReader{}, err
-	}
-	scanner := newScanner(conn)
-	if scanner == nil {
-		return fabulaReader{}, err
-	}
-	return fabulaReader{c: conn, s: scanner}, nil
+	return fabulaReader{}, err
 }
 
 type ConfigWriter struct {
-	Host string
+	Hosts []string
 }
 
 type fabulaStoryWriter struct {
@@ -144,36 +153,6 @@ type ConfigS struct {
 	Mark *Mark
 }
 
-type fabulaSync struct {
-	c net.Conn
-	s *bufio.Scanner
-}
-
-func (z fabulaSync) Sync(f func(SyncMessage) bool) {
-	if z.s.Scan() {
-
-	}
-}
-
-func NewSync(c ConfigS) (*fabulaSync, error) {
-	conn, err := net.Dial("tcp", c.Host)
-	if err != nil {
-		return nil, err
-	}
-	_, err = conn.Write([]byte("s;\n"))
-	if err != nil {
-		return nil, err
-	}
-	scanner := newScanner(conn)
-	if scanner == nil {
-		return nil, err
-	}
-	return &fabulaSync{
-		c: conn,
-		s: scanner,
-	}, err
-}
-
 func (z fabulaStoryWriter) readLine() (string, error) {
 	if z.s.Scan() {
 		return z.s.Text(), nil
@@ -182,21 +161,26 @@ func (z fabulaStoryWriter) readLine() (string, error) {
 }
 
 func NewStoryWriter(c ConfigWriter) (fabulaStoryWriter, error) {
-	conn, err := net.Dial("tcp", c.Host)
-	if err != nil {
-		return fabulaStoryWriter{}, err
-	}
-	_, err = conn.Write([]byte("sw;;;;\n"))
-	if err != nil {
-		return fabulaStoryWriter{}, err
-	}
+	var err error
+	var conn net.Conn
+	for _, host := range c.Hosts {
+		conn, err = cnet.Dial(host)
+		if err != nil {
+			return fabulaStoryWriter{}, err
+		}
+		_, err = conn.Write([]byte("sw;;;;\n"))
+		if err != nil {
+			return fabulaStoryWriter{}, err
+		}
 
-	scanner := newScanner(conn)
-	if scanner == nil {
-		return fabulaStoryWriter{}, err
-	}
+		scanner := newScanner(conn)
+		if scanner == nil {
+			return fabulaStoryWriter{}, fmt.Errorf("no scanner found")
+		}
 
-	return fabulaStoryWriter{c: conn, s: scanner}, nil
+		return fabulaStoryWriter{c: conn, s: scanner}, nil
+	}
+	return fabulaStoryWriter{}, err
 }
 
 func newScanner(c net.Conn) *bufio.Scanner {
