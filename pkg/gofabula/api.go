@@ -32,7 +32,6 @@ type fabulaReader struct {
 type FabulaTail struct {
 	Topic   string
 	Chapter uint64
-	Review  bool
 	Line    uint64
 	Message string
 }
@@ -58,13 +57,11 @@ func (z fabulaReader) Read(f func(r FabulaTail) error) error {
 		}
 		currChapter, _ := strconv.Atoi(lineSpl[1])
 		currLine, _ := strconv.Atoi(lineSpl[2])
-		review, _ := strconv.ParseBool(lineSpl[3])
 		k := FabulaTail{
 			Chapter: uint64(currChapter),
 			Line:    uint64(currLine),
-			Review:  review,
-			Topic:   lineSpl[4],
-			Message: lineSpl[5],
+			Topic:   lineSpl[3],
+			Message: lineSpl[4],
 		}
 		json.Unmarshal([]byte(line), &k)
 		err = f(k)
@@ -183,13 +180,6 @@ func NewStoryWriter(c ConfigWriter) (fabulaStoryWriter, error) {
 	return fabulaStoryWriter{}, err
 }
 
-func newScanner(c net.Conn) *bufio.Scanner {
-	scanner := bufio.NewScanner(c)
-	scanner.Split(bufio.ScanLines)
-	if scanner.Scan() {
-		if scanner.Text() == "ok" {
-			return scanner
-		}
-	}
-	return nil
+func Sync(id string) (*Mark, error){
+	return nil, fmt.Errorf("error")
 }
